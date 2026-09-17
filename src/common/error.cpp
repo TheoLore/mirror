@@ -20,7 +20,7 @@ namespace Common {
 // glibc, mlibc, musl, and newlib all define their own variants of strerror_r
 // We don't need to use the preprocessor, we can just select depending on return type
 template<typename T> std::string HandleStrerrorR(T r, char *err_str);
-template<char*> std::string HandleStrerrorR(const char* r, char *) { return std::string{r}; }
+template<char*> std::string HandleStrerrorR(char* r, char *) { return std::string{r}; }
 template<char const*> std::string HandleStrerrorR(const char* r, char *) { return std::string{r}; }
 template<int> std::string HandleStrerrorR(int r, char *err_str) {
     return std::string{r != 0
