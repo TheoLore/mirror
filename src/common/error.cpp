@@ -44,7 +44,7 @@ std::string NativeErrorToString(int e) {
     return "(FormatMessageA failed to format error)";
 #else
     char err_str[255];
-    return HandleStrerrorR(strerror_r(e, err_str, sizeof(err_str)), e, err_str, sizeof(err_str));
+    return HandleStrerrorR(strerror_r(e, err_str, sizeof(err_str)), err_str);
 #endif // _WIN32
 }
 
