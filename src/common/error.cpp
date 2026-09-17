@@ -19,11 +19,11 @@ namespace Common {
 
 // glibc, mlibc, musl, and newlib all define their own variants of strerror_r
 // We don't need to use the preprocessor, we can just select depending on return type
-template<typename T> std::string HandleStrerrorR(T r, int e, char *err_str, size_t n);
-template<const char*> std::string HandleStrerrorR(const char* r, int e, char *err_str, size_t n) {
+template<typename T> std::string HandleStrerrorR(T r, char *err_str);
+template<const char*> std::string HandleStrerrorR(const char* r, char *) {
     return std::string{r};
 }
-template<int> std::string HandleStrerrorR(int r, int e, char *err_str, size_t n) {
+template<int> std::string HandleStrerrorR(int r, char *err_str) {
     return std::string{r != 0
         ? "(strerror_r failed to format error)"
         : err_str};
