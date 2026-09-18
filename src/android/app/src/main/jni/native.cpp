@@ -192,12 +192,13 @@ static std::pair<std::string, std::string> ResolveCustomDriver(
 }
 #endif
 
-void EmulationSession::InitializeGpuDriver(const std::string& hook_lib_dir,
+bool EmulationSession::InitializeGpuDriver(const std::string& hook_lib_dir,
                                            const std::string& custom_driver_dir,
                                            const std::string& custom_driver_name,
                                            const std::string& file_redirect_dir) {
 #ifdef ARCHITECTURE_arm64
     void* handle{};
+    bool custom_loaded{};
     const char* file_redirect_dir_{};
     int featureFlags{};
 
@@ -222,6 +223,7 @@ void EmulationSession::InitializeGpuDriver(const std::string& hook_lib_dir,
             resolved.first.empty() ? custom_driver_dir.c_str() : resolved.first.c_str(),
             resolved.second.empty() ? custom_driver_name.c_str() : resolved.second.c_str(),
             file_redirect_dir_, nullptr);
+        custom_loaded = handle != nullptr;
         if (!handle) {
             LOG_ERROR(Frontend, "[GPU] Failed to load selected custom driver; system fallback will be logged");
         }
@@ -237,6 +239,9 @@ void EmulationSession::InitializeGpuDriver(const std::string& hook_lib_dir,
     }
 
     m_vulkan_library = std::make_shared<Common::DynamicLibrary>(handle);
+    return custom_driver_name.empty() ? handle != nullptr : custom_loaded;
+#else
+    return custom_driver_name.empty();
 #endif
 }
 
@@ -855,12 +860,12 @@ jboolean Java_org_yuzu_yuzu_1emu_NativeLibrary_doesUpdateMatchProgram(JNIEnv* en
     return false;
 }
 
-void JNICALL Java_org_yuzu_yuzu_1emu_NativeLibrary_initializeGpuDriver(JNIEnv* env,
-                                                                       [[maybe_unused]] jclass clazz,
-                                                                       jstring hook_lib_dir,
-                                                                       jstring custom_driver_dir,
-                                                                       jstring custom_driver_name,
-                                                                       jstring file_redirect_dir) {
+jboolean JNICALL Java_org_yuzu_yuzu_1emu_NativeLibrary_initializeGpuDriver(JNIEnv* env,
+                                                                            [[maybe_unused]] jclass clazz,
+                                                                            jstring hook_lib_dir,
+                                                                            jstring custom_driver_dir,
+                                                                            jstring custom_driver_name,
+                                                                            jstring file_redirect_dir) {
     // Log active Freedreno environment variables
     const char* tu_debug = getenv("TU_DEBUG");
     const char* fd_debug = getenv("FD_MESA_DEBUG");
@@ -877,7 +882,7 @@ void JNICALL Java_org_yuzu_yuzu_1emu_NativeLibrary_initializeGpuDriver(JNIEnv* e
         if (tu_breadcrumbs) LOG_INFO(Frontend, "[Freedreno]   TU_BREADCRUMBS={}", tu_breadcrumbs);
     }
 
-    EmulationSession::GetInstance().InitializeGpuDriver(
+    return EmulationSession::GetInstance().InitializeGpuDriver(
         Common::Android::GetJString(env, hook_lib_dir),
         Common::Android::GetJString(env, custom_driver_dir),
         Common::Android::GetJString(env, custom_driver_name),

@@ -152,7 +152,7 @@ object NativeLibrary {
         customDriverDir: String?,
         customDriverName: String?,
         fileRedirectDir: String?
-    )
+    ): Boolean
 
     external fun reloadKeys(): Boolean
 

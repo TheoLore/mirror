@@ -35,7 +35,7 @@ public:
     void SetNativeWindow(ANativeWindow* native_window);
     void SurfaceChanged();
 
-    void InitializeGpuDriver(const std::string& hook_lib_dir, const std::string& custom_driver_dir,
+    bool InitializeGpuDriver(const std::string& hook_lib_dir, const std::string& custom_driver_dir,
                              const std::string& custom_driver_name,
                              const std::string& file_redirect_dir);
 

@@ -33,7 +33,7 @@ object GpuDriverHelper {
         NativeFreedrenoConfig.reloadFreedrenoConfig()
     }
 
-    fun initializeDriverParameters() {
+    fun initializeDriverParameters(): Boolean {
         try {
             // Initialize the file redirection directory.
             fileRedirectionPath = YuzuApplication.appContext
@@ -51,7 +51,7 @@ object GpuDriverHelper {
         NativeFreedrenoConfig.reloadFreedrenoConfig()
 
         // Initialize GPU driver.
-        NativeLibrary.initializeGpuDriver(
+        return NativeLibrary.initializeGpuDriver(
             hookLibPath,
             driverInstallationPath,
             installedCustomDriverData.libraryName,
@@ -106,75 +106,70 @@ object GpuDriverHelper {
      * other user data and also unzipped into the installation directory
      */
     fun installCustomDriver(driverUri: Uri): Boolean {
-        // Revert to system default in the event the specified driver is bad.
-        installDefaultDriver()
-
-        // Ensure we have directories.
         initializeDirectories()
 
-        // Copy the zip file URI to user data
         val copiedFile =
             FileUtil.copyUriToInternalStorage(driverUri, driverStoragePath) ?: return false
-
-        // Validate driver
-        val metadata = getMetadataFromZip(copiedFile)
-        if (metadata.name == null) {
-            copiedFile.delete()
-            return false
-        }
-
-        if (metadata.minApi > Build.VERSION.SDK_INT) {
-            copiedFile.delete()
-            return false
-        }
-
-        // Unzip the driver.
-        try {
-            FileUtil.unzipToInternalStorage(
-                copiedFile.path,
-                File(driverInstallationPath!!)
-            )
-        } catch (e: SecurityException) {
-            return false
-        }
-
-        // Initialize the driver parameters.
-        initializeDriverParameters()
-
-        return true
+        return installCustomDriverArchive(copiedFile)
     }
 
     /**
      * Unzips driver into installation directory
      */
     fun installCustomDriver(driver: File): Boolean {
-        // Revert to system default in the event the specified driver is bad.
-        installDefaultDriver()
-
-        // Ensure we have directories.
         initializeDirectories()
+        return installCustomDriverArchive(driver)
+    }
 
-        // Validate driver
+    private fun installCustomDriverArchive(driver: File): Boolean {
         val metadata = getMetadataFromZip(driver)
-        if (metadata.name == null) {
+        val libraryName = metadata.libraryName
+            ?.replace('\\', '/')
+            ?.substringAfterLast('/')
+            ?.takeIf { it.isNotBlank() }
+        if (metadata.name == null || libraryName == null || metadata.minApi > Build.VERSION.SDK_INT) {
             driver.delete()
             return false
         }
 
-        // Unzip the driver to the private installation directory
+        val installation = File(driverInstallationPath!!)
+        val staging = File("${installation.path}.staging")
+        val backup = File("${installation.path}.backup")
+        staging.deleteRecursively()
+        backup.deleteRecursively()
+
         try {
-            FileUtil.unzipToInternalStorage(
-                driver.path,
-                File(driverInstallationPath!!)
-            )
-        } catch (e: SecurityException) {
+            FileUtil.unzipToInternalStorage(driver.path, staging)
+        } catch (_: SecurityException) {
+            staging.deleteRecursively()
             return false
         }
 
-        // Initialize the driver parameters.
-        initializeDriverParameters()
+        if (!staging.walkTopDown().any { it.isFile && it.name == libraryName }) {
+            staging.deleteRecursively()
+            return false
+        }
 
-        return true
+        if (installation.exists() && !installation.renameTo(backup)) {
+            staging.deleteRecursively()
+            return false
+        }
+        if (!staging.renameTo(installation)) {
+            backup.renameTo(installation)
+            staging.deleteRecursively()
+            return false
+        }
+
+        val loaded = initializeDriverParameters()
+        if (loaded) {
+            backup.deleteRecursively()
+            return true
+        }
+
+        installation.deleteRecursively()
+        backup.renameTo(installation)
+        initializeDriverParameters()
+        return false
     }
 
     /**
