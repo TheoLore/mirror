@@ -10,6 +10,7 @@
 #include <codecvt>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <locale>
 #include <map>
 #include <set>
@@ -18,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 #include <dlfcn.h>
 #include <unistd.h>
@@ -159,6 +161,37 @@ void EmulationSession::SetNativeWindow(ANativeWindow* native_window) {
     m_native_window = native_window;
 }
 
+#ifdef ARCHITECTURE_arm64
+static std::pair<std::string, std::string> ResolveCustomDriver(
+    const std::string& driver_dir, const std::string& driver_name) {
+    std::filesystem::path root{driver_dir};
+    std::string name{driver_name};
+    while (!name.empty() && name.front() == '/') {
+        name.erase(name.begin());
+    }
+
+    root = root.lexically_normal();
+    const auto direct = root / name;
+    std::error_code error;
+    if (std::filesystem::is_regular_file(direct, error)) {
+        return {direct.parent_path().string() + "/", direct.filename().string()};
+    }
+
+    if (!std::filesystem::is_directory(root, error)) {
+        return {};
+    }
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(root, error)) {
+        if (error) {
+            break;
+        }
+        if (entry.is_regular_file(error) && entry.path().filename() == name) {
+            return {entry.path().parent_path().string() + "/", entry.path().filename().string()};
+        }
+    }
+    return {};
+}
+#endif
+
 void EmulationSession::InitializeGpuDriver(const std::string& hook_lib_dir,
                                            const std::string& custom_driver_dir,
                                            const std::string& custom_driver_name,
@@ -176,13 +209,29 @@ void EmulationSession::InitializeGpuDriver(const std::string& hook_lib_dir,
 
     // Try to load a custom driver.
     if (custom_driver_name.size()) {
+        const auto resolved = ResolveCustomDriver(custom_driver_dir, custom_driver_name);
+        if (resolved.first.empty()) {
+            LOG_ERROR(Frontend, "[GPU] Selected custom driver was not found: dir='{}', name='{}'",
+                      custom_driver_dir, custom_driver_name);
+        } else {
+            LOG_INFO(Frontend, "[GPU] Loading selected custom driver: {}{}", resolved.first,
+                     resolved.second);
+        }
         handle = adrenotools_open_libvulkan(
             RTLD_NOW, featureFlags | ADRENOTOOLS_DRIVER_CUSTOM, nullptr, hook_lib_dir.c_str(),
-            custom_driver_dir.c_str(), custom_driver_name.c_str(), file_redirect_dir_, nullptr);
+            resolved.first.empty() ? custom_driver_dir.c_str() : resolved.first.c_str(),
+            resolved.second.empty() ? custom_driver_name.c_str() : resolved.second.c_str(),
+            file_redirect_dir_, nullptr);
+        if (!handle) {
+            LOG_ERROR(Frontend, "[GPU] Failed to load selected custom driver; system fallback will be logged");
+        }
     }
 
     // Try to load the system driver.
     if (!handle) {
+        if (custom_driver_name.size()) {
+            LOG_WARNING(Frontend, "[GPU] Falling back to the system Vulkan driver after custom driver failure");
+        }
         handle = adrenotools_open_libvulkan(RTLD_NOW, featureFlags, nullptr, hook_lib_dir.c_str(),
                                             nullptr, nullptr, file_redirect_dir_, nullptr);
     }

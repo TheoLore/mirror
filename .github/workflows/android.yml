@@ -1,0 +1,60 @@
+name: Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - android-turnip
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx5g
+
+jobs:
+  build-android:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: sdkmanager --install "platforms;android-36" "build-tools;35.0.0" "cmake;3.31.6" "ndk;28.2.13676358"
+
+      - name: Configure build
+        run: chmod +x .ci/android/build.sh src/android/gradlew
+
+      - name: Build Android legacy APK
+        run: .ci/android/build.sh --target legacy --build-type Release
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: eden-android-legacy
+          if-no-files-found: error
+          path: artifacts/*
+          retention-days: 14
+      
+      - name: Upload APK fallback
+        uses: actions/upload-artifact@v4
+        with:
+          name: eden-android-apk
+          if-no-files-found: warn
+          path: |
+            src/android/app/build/outputs/apk/**/*.apk
+            src/android/app/build/outputs/bundle/**/*.aab
+          retention-days: 14
